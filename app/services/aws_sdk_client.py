@@ -4,11 +4,16 @@ Generic AWS SDK client for executing read-only operations.
 Security-first design with operation allowlists and response sanitization.
 """
 
+import logging
 import re
 from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError, ParamValidationError
+
+from app.utils.errors import report_exception
+
+logger = logging.getLogger(__name__)
 
 # Read-only operation patterns (allowlist)
 ALLOWED_OPERATION_PATTERNS = [
@@ -218,6 +223,19 @@ def execute_aws_sdk_call(
         }
 
     except NoCredentialsError as e:
+        report_exception(
+            e,
+            logger=logger,
+            message=f"AWS credentials not configured for {service_name}.{operation_name}",
+            severity="warning",
+            tags={
+                "surface": "service_client",
+                "integration": "aws_sdk",
+                "component": "app.services.aws_sdk_client",
+                "error_type": "credentials",
+            },
+            extras={"service": service_name, "operation": operation_name},
+        )
         return {
             "success": False,
             "error": f"AWS credentials not configured: {str(e)}",
@@ -228,6 +246,19 @@ def execute_aws_sdk_call(
         }
 
     except ParamValidationError as e:
+        report_exception(
+            e,
+            logger=logger,
+            message=f"Invalid parameters for {service_name}.{operation_name}",
+            severity="warning",
+            tags={
+                "surface": "service_client",
+                "integration": "aws_sdk",
+                "component": "app.services.aws_sdk_client",
+                "error_type": "validation",
+            },
+            extras={"service": service_name, "operation": operation_name},
+        )
         return {
             "success": False,
             "error": f"Invalid parameters: {str(e)}",
@@ -240,7 +271,26 @@ def execute_aws_sdk_call(
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
         error_message = e.response.get("Error", {}).get("Message", str(e))
+        status_code = e.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
 
+        report_exception(
+            e,
+            logger=logger,
+            message=f"AWS API error ({error_code}) for {service_name}.{operation_name}",
+            severity="warning",
+            tags={
+                "surface": "service_client",
+                "integration": "aws_sdk",
+                "component": "app.services.aws_sdk_client",
+                "error_type": "client_error",
+                "aws_error_code": error_code,
+            },
+            extras={
+                "service": service_name,
+                "operation": operation_name,
+                "status_code": status_code,
+            },
+        )
         return {
             "success": False,
             "error": f"AWS API error ({error_code}): {error_message}",
@@ -250,11 +300,24 @@ def execute_aws_sdk_call(
             "metadata": {
                 "error_type": "client_error",
                 "error_code": error_code,
-                "status_code": e.response.get("ResponseMetadata", {}).get("HTTPStatusCode"),
+                "status_code": status_code,
             },
         }
 
     except Exception as e:
+        report_exception(
+            e,
+            logger=logger,
+            message=f"Unexpected error in {service_name}.{operation_name}",
+            severity="error",
+            tags={
+                "surface": "service_client",
+                "integration": "aws_sdk",
+                "component": "app.services.aws_sdk_client",
+                "error_type": "unexpected",
+            },
+            extras={"service": service_name, "operation": operation_name},
+        )
         return {
             "success": False,
             "error": f"Unexpected error: {str(e)}",

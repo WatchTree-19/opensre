@@ -117,11 +117,27 @@ def get_function_code(
         }
 
         if extract_files and code_location and code_size < 5 * 1024 * 1024:
-            # Download and extract if code is under 5MB
+            # Download and extract if code is under 5MB.
             import requests
 
-            zip_response = requests.get(code_location, timeout=30)
-            if zip_response.status_code == 200:
+            try:
+                zip_response = requests.get(code_location, timeout=30)
+                zip_response.raise_for_status()
+            except requests.RequestException as exc:
+                report_exception(
+                    exc,
+                    logger=logger,
+                    message=f"Lambda code download failed for {function_name}",
+                    severity="warning",
+                    tags={
+                        "surface": "service_client",
+                        "integration": "aws_lambda",
+                        "component": "app.services.lambda_client",
+                    },
+                    extras={"function_name": function_name},
+                )
+                result["data"]["download_error"] = str(exc)
+            else:
                 files: dict[str, Any] = {}
                 try:
                     with ZipFile(BytesIO(zip_response.content)) as zf:
@@ -148,8 +164,20 @@ def get_function_code(
                                 }
                     result["data"]["files"] = files
                     result["data"]["file_count"] = len(files)
-                except Exception as e:
-                    result["data"]["extract_error"] = str(e)
+                except Exception as exc:
+                    report_exception(
+                        exc,
+                        logger=logger,
+                        message=f"Lambda code extract failed for {function_name}",
+                        severity="warning",
+                        tags={
+                            "surface": "service_client",
+                            "integration": "aws_lambda",
+                            "component": "app.services.lambda_client",
+                        },
+                        extras={"function_name": function_name},
+                    )
+                    result["data"]["extract_error"] = str(exc)
 
         return result
     except ClientError as e:
