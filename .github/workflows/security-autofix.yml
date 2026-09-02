@@ -2,7 +2,7 @@ name: Security Auto-Fix
 
 on:
   schedule:
-    - cron: "0 */4 * * *"
+    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -74,7 +74,7 @@ jobs:
             - Ran `pip-audit` for dependency vulnerabilities
 
             ### Review checklist
-            - [ ] Review all changes — auto-fixes may alter behavior
+            - [ ] Review all changes â€” auto-fixes may alter behavior
             - [ ] Verify tests pass
             - [ ] Check that no false-positive fixes were applied
           labels: security,automated
